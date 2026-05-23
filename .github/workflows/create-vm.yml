@@ -44,10 +44,11 @@ jobs:
           echo "region=${{ env.OCI_CLI_REGION }}" >> ~/.oci/config
           echo "${{ secrets.SSH_PUBLIC_KEY }}" > /home/runner/my_ssh_key.pub
 
-      - name: Retry VM Creation (every 2 min, up to 60 attempts = 2 hours)
+      - name: Retry VM Creation (every 1 min, up to 350 attempts)
+        timeout-minutes: 360
         run: |
-          for i in $(seq 1 60); do
-            echo "=== Attempt $i/60 ==="
+          for i in $(seq 1 350); do
+            echo "=== Attempt $i/350 ==="
             OCI_OUTPUT=$(oci compute instance launch \
               --compartment-id "$COMPARTMENT_ID" \
               --availability-domain "$AD_NAME" \
@@ -68,16 +69,13 @@ jobs:
               exit 0
             fi
 
-            echo "Attempt $i failed. Retrying in 2 min..."
-            if [ $i -lt 60 ]; then
-              sleep 120
+            echo "Attempt $i failed. Retrying in 1 min..."
+            if [ $i -lt 350 ]; then
+              sleep 60
             fi
           done
 
-          echo "All 60 attempts failed."
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            --data-urlencode "text=failure - 2hr cycle ended, auto-triggering next round"
+          echo "All 350 attempts failed."
 
       - name: Auto-trigger Next Round
         if: always()
