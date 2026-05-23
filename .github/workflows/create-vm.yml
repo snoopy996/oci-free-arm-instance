@@ -1,6 +1,8 @@
 name: Try to Create OCI VM
 
 on:
+  schedule:
+    - cron: "*/5 * * * *"
   workflow_dispatch:
   push:
     branches: [ main ]
@@ -30,12 +32,18 @@ jobs:
       - name: Add OCI CLI to path
         run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Setup OCI CLI
+      - name: Setup OCI CLI and Try to Create VM
+        id: create_vm
+        continue-on-error: true
         run: |
+          set -o pipefail
+
           pip install oci-cli
+
           mkdir -p ~/.oci
           echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/oci_api_key.pem
           chmod 600 ~/.oci/oci_api_key.pem
+
           echo "[DEFAULT]" > ~/.oci/config
           echo "user=${{ secrets.OCI_CLI_USER }}" >> ~/.oci/config
           echo "tenancy=${{ secrets.OCI_CLI_TENANCY }}" >> ~/.oci/config
@@ -44,49 +52,34 @@ jobs:
           echo "region=${{ env.OCI_CLI_REGION }}" >> ~/.oci/config
           echo "${{ secrets.SSH_PUBLIC_KEY }}" > /home/runner/my_ssh_key.pub
 
-      - name: Retry Create VM (every 5 min, up to 60 min)
+          OCI_OUTPUT=$(oci compute instance launch \
+            --compartment-id "$COMPARTMENT_ID" \
+            --availability-domain "$AD_NAME" \
+            --shape "VM.Standard.A1.Flex" \
+            --shape-config '{"ocpus":4,"memoryInGBs":24}' \
+            --subnet-id "$SUBNET_ID" \
+            --image-id "$IMAGE_ID" \
+            --ssh-authorized-keys-file "/home/runner/my_ssh_key.pub" \
+            --assign-public-ip true \
+            --display-name "coolify-vm" \
+            --boot-volume-size-in-gbs 200 2>&1 || true)
+
+          echo "log_data<<EOF" >> $GITHUB_OUTPUT
+          echo "$OCI_OUTPUT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          if echo "$OCI_OUTPUT" | grep -q '"lifecycle-state": "PROVISIONING"'; then
+            echo "Success! 'PROVISIONING' state found in output."
+            exit 0
+          else
+            echo "Error: Success string not found in OCI output. Failing the step."
+            exit 1
+          fi
+
+      - name: Send Telegram Notification
+        if: always()
         run: |
-          MAX_ATTEMPTS=12
-          for i in $(seq 1 $MAX_ATTEMPTS); do
-            echo "=== Attempt $i/$MAX_ATTEMPTS ==="
-            OCI_OUTPUT=$(oci compute instance launch \
-              --compartment-id "$COMPARTMENT_ID" \
-              --availability-domain "$AD_NAME" \
-              --shape "VM.Standard.A1.Flex" \
-              --shape-config '{"ocpus":4,"memoryInGBs":24}' \
-              --subnet-id "$SUBNET_ID" \
-              --image-id "$IMAGE_ID" \
-              --ssh-authorized-keys-file "/home/runner/my_ssh_key.pub" \
-              --assign-public-ip true \
-              --display-name "coolify-vm" \
-              --boot-volume-size-in-gbs 200 2>&1 || true)
-
-            if echo "$OCI_OUTPUT" | grep -q '"lifecycle-state": "PROVISIONING"'; then
-              echo "SUCCESS! VM created!"
-              echo "log_data=SUCCESS" >> $GITHUB_ENV
-              echo "vm_created=true" >> $GITHUB_ENV
-              exit 0
-            fi
-
-            echo "Attempt $i failed. Will retry in 5 min..."
-            if [ $i -lt $MAX_ATTEMPTS ]; then
-              sleep 300
-            fi
-          done
-          echo "All $MAX_ATTEMPTS attempts failed."
-          echo "log_data=All $MAX_ATTEMPTS attempts failed (Out of host capacity)" >> $GITHUB_ENV
-          echo "vm_created=false" >> $GITHUB_ENV
-
-      - name: Send Telegram Success
-        if: env.vm_created == 'true'
-        run: |
+          STATUS="${{ steps.create_vm.outcome }}"
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            --data-urlencode "text=SUCCESS - OCI VM created! 4C24G ARM VM is ready!"
-
-      - name: Send Telegram Failure
-        if: env.vm_created == 'false'
-        run: |
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            --data-urlencode "text=failure - OCI VM still unavailable, next run will retry"
+            --data-urlencode "text=$STATUS - OCI VM create attempt completed"
