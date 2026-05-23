@@ -71,7 +71,7 @@ jobs:
 
             echo "Attempt $i failed. Retrying in 1 min..."
 
-            if [ $((i % 30)) -eq 0 ]; then
+            if [ $((i % 5)) -eq 0 ]; then
               curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
                 --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
                 --data-urlencode "text=alive - still trying ($i/350 attempts done)"
