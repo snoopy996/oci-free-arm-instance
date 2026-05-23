@@ -79,10 +79,10 @@ jobs:
         run: |
           STATUS="${{ steps.create_vm.outcome }}"
           if [ "$STATUS" = "success" ]; then
-            MSG="✅ OCI VM 创建成功！VM.Standard.A1.Flex (4核24GB) 已抢到！"
+            MSG="OCI VM CREATE SUCCESS! 4C24G VM IS READY!"
           else
-            MSG="❌ OCI VM 创建失败，下次自动重试"
+            MSG="OCI VM create failed, retrying in 5 min..."
           fi
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d "text=$MSG" > /dev/null
+            --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            --data-urlencode "text=$STATUS - $MSG"
