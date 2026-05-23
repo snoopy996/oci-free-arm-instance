@@ -2,8 +2,10 @@ name: Try to Create OCI VM
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "1-59/5 * * * *"
   workflow_dispatch:
+  push:
+    branches: [ main ]
 
 env:
   COMPARTMENT_ID: ${{ secrets.OCI_COMPARTMENT_ID }}
