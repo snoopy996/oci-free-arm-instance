@@ -74,9 +74,25 @@ jobs:
             exit 1
           fi
 
-      - name: Print Result
+      - name: Send Telegram Notification
         if: always()
+        env:
+          STATUS: ${{ steps.create_vm.outcome }}
+          LOG: ${{ steps.create_vm.outputs.log_data }}
         run: |
-          echo "OCI VM Creation Status: ${{ steps.create_vm.outcome }}"
-          echo "Log:"
-          echo "${{ steps.create_vm.outputs.log_data }}"
+          if [ "$STATUS" = "success" ]; then
+            MSG="✅ OCI VM 创建成功！VM.Standard.A1.Flex (4核24GB) 已抢到！"
+          else
+            MSG="❌ OCI VM 创建失败："
+            if echo "$LOG" | grep -q "Out of host capacity"; then
+              MSG="${MSG} 主机容量不足，下次继续抢..."
+            elif echo "$LOG" | grep -q "timed out"; then
+              MSG="${MSG} 连接超时，下次继续..."
+            else
+              MSG="${MSG} 未知错误，下次继续..."
+            fi
+          fi
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d "text=$MSG" \
+            -d "disable_web_page_preview=true" > /dev/null
