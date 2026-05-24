@@ -71,10 +71,10 @@ jobs:
 
             echo "Attempt $i failed. Retrying in 1 min..."
 
-            if [ $((i % 5)) -eq 0 ]; then
+            if [ $((i % 10)) -eq 0 ]; then
               curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
                 --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-                --data-urlencode "text=alive - still trying ($i/350 attempts done)"
+                --data-urlencode "text=🔵 alive - AD-3 still trying ($i/350 attempts done)"
             fi
 
             if [ $i -lt 350 ]; then
@@ -85,8 +85,11 @@ jobs:
           echo "All 350 attempts failed."
 
       - name: Auto-trigger Next Round
-        if: always()
+        if: success() || failure()
         run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            --data-urlencode "text=🔴 AD-3 round ended (350 attempts failed), auto-triggering next round..."
           curl -s -X POST "https://api.github.com/repos/snoopy996/oci-free-arm-instance/actions/workflows/create-vm.yml/dispatches" \
             -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: Bearer ${{ secrets.GH_PAT }}" \
