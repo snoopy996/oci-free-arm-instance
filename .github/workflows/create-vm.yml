@@ -47,6 +47,7 @@ jobs:
       - name: Retry VM Creation (every 1 min, up to 350 attempts)
         timeout-minutes: 360
         run: |
+          SHORT_AD=$(echo "$AD_NAME" | grep -oP 'AD-\d+')
           for i in $(seq 1 350); do
             echo "=== Attempt $i/350 ==="
             OCI_OUTPUT=$(oci compute instance launch \
@@ -65,7 +66,7 @@ jobs:
               echo "SUCCESS! VM Created!"
               curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
                 --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-                --data-urlencode "text=SUCCESS - OCI VM created! 4C24G ARM VM is ready!"
+                --data-urlencode "text=🎉 SUCCESS! OCI VM created on $SHORT_AD! 4C24G ARM is ready!"
               exit 0
             fi
 
@@ -74,7 +75,7 @@ jobs:
             if [ $((i % 10)) -eq 0 ]; then
               curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
                 --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-                --data-urlencode "text=🔵 alive - AD-3 still trying ($i/350 attempts done)"
+                --data-urlencode "text=🔵 alive - $SHORT_AD still trying ($i/350 attempts done)"
             fi
 
             if [ $i -lt 350 ]; then
@@ -87,9 +88,10 @@ jobs:
       - name: Auto-trigger Next Round
         if: success() || failure()
         run: |
+          SHORT_AD=$(echo "$AD_NAME" | grep -oP 'AD-\d+')
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            --data-urlencode "text=🔴 AD-3 round ended (350 attempts failed), auto-triggering next round..."
+            --data-urlencode "text=🔴 $SHORT_AD round ended (350 attempts failed), auto-triggering next..."
           curl -s -X POST "https://api.github.com/repos/snoopy996/oci-free-arm-instance/actions/workflows/create-vm.yml/dispatches" \
             -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: Bearer ${{ secrets.GH_PAT }}" \
