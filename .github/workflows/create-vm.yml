@@ -9,7 +9,6 @@ env:
   COMPARTMENT_ID: ${{ secrets.OCI_COMPARTMENT_ID }}
   IMAGE_ID: ${{ secrets.OCI_IMAGE_ID }}
   SUBNET_ID: ${{ secrets.OCI_SUBNET_ID }}
-  AD_NAME: ${{ secrets.OCI_AD_NAME }}
   OCI_CLI_REGION: ${{ secrets.OCI_CLI_REGION }}
   OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
   OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
@@ -17,11 +16,17 @@ env:
   OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
 
 jobs:
-  build-and-deploy:
+  snipe:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ad:
+          - { name: "pGdO:PHX-AD-1", label: "AD-1" }
+          - { name: "pGdO:PHX-AD-2", label: "AD-2" }
+          - { name: "pGdO:PHX-AD-3", label: "AD-3" }
     steps:
       - name: Cache pip packages
-        id: cache-pip
         uses: actions/cache@v4
         with:
           path: ~/.local
@@ -36,20 +41,18 @@ jobs:
           mkdir -p ~/.oci
           echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/oci_api_key.pem
           chmod 600 ~/.oci/oci_api_key.pem
-          echo "[DEFAULT]" > ~/.oci/config
-          echo "user=${{ secrets.OCI_CLI_USER }}" >> ~/.oci/config
-          echo "tenancy=${{ secrets.OCI_CLI_TENANCY }}" >> ~/.oci/config
-          echo "fingerprint=${{ secrets.OCI_CLI_FINGERPRINT }}" >> ~/.oci/config
-          echo "key_file=~/.oci/oci_api_key.pem" >> ~/.oci/config
-          echo "region=${{ env.OCI_CLI_REGION }}" >> ~/.oci/config
+          printf "[DEFAULT]\nuser=%s\ntenancy=%s\nfingerprint=%s\nkey_file=~/.oci/oci_api_key.pem\nregion=%s\n" \
+            "${{ secrets.OCI_CLI_USER }}" "${{ secrets.OCI_CLI_TENANCY }}" "${{ secrets.OCI_CLI_FINGERPRINT }}" "${{ env.OCI_CLI_REGION }}" > ~/.oci/config
           echo "${{ secrets.SSH_PUBLIC_KEY }}" > /home/runner/my_ssh_key.pub
 
-      - name: Retry VM Creation (every 1 min, up to 350 attempts)
+      - name: Snipe ${{ matrix.ad.label }}
         timeout-minutes: 360
         run: |
-          SHORT_AD=$(echo "$AD_NAME" | grep -oP 'AD-\d+')
+          AD_NAME="${{ matrix.ad.name }}"
+          AD_LABEL="${{ matrix.ad.label }}"
+          
           for i in $(seq 1 350); do
-            echo "=== Attempt $i/350 ==="
+            echo "[$AD_LABEL] === Attempt $i/350 ==="
             OCI_OUTPUT=$(oci compute instance launch \
               --compartment-id "$COMPARTMENT_ID" \
               --availability-domain "$AD_NAME" \
@@ -63,19 +66,19 @@ jobs:
               --boot-volume-size-in-gbs 200 2>&1 || true)
 
             if echo "$OCI_OUTPUT" | grep -q '"lifecycle-state": "PROVISIONING"'; then
-              echo "SUCCESS! VM Created!"
+              echo "🎉 SUCCESS on $AD_LABEL!"
               curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
                 --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-                --data-urlencode "text=🎉 SUCCESS! OCI VM created on $SHORT_AD! 4C24G ARM is ready!"
+                --data-urlencode "text=🎉 SUCCESS! OCI VM created on $AD_LABEL! 4C24G ARM is ready!"
               exit 0
             fi
 
-            echo "Attempt $i failed. Retrying in 1 min..."
+            echo "[$AD_LABEL] Attempt $i failed. Retrying in 1 min..."
 
             if [ $((i % 10)) -eq 0 ]; then
               curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
                 --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-                --data-urlencode "text=🔵 alive - $SHORT_AD still trying ($i/350 attempts done)"
+                --data-urlencode "text=🔵 $AD_LABEL alive ($i/350)"
             fi
 
             if [ $i -lt 350 ]; then
@@ -83,15 +86,14 @@ jobs:
             fi
           done
 
-          echo "All 350 attempts failed."
+          echo "[$AD_LABEL] All 350 attempts failed."
 
       - name: Auto-trigger Next Round
         if: success() || failure()
         run: |
-          SHORT_AD=$(echo "$AD_NAME" | grep -oP 'AD-\d+')
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            --data-urlencode "text=🔴 $SHORT_AD round ended (350 attempts failed), auto-triggering next..."
+            --data-urlencode "text=🔴 ${{ matrix.ad.label }} round ended, auto-triggering..."
           curl -s -X POST "https://api.github.com/repos/snoopy996/oci-free-arm-instance/actions/workflows/create-vm.yml/dispatches" \
             -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: Bearer ${{ secrets.GH_PAT }}" \
