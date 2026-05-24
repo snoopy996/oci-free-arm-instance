@@ -1,0 +1,21 @@
+name: Test Telegram
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send test message
+        run: |
+          RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            --data-urlencode "text=🧪 Telegram test - AD-3 sniping is running")
+          echo "Response: $RESPONSE"
+          
+          if echo "$RESPONSE" | grep -q '"ok":true'; then
+            echo "Telegram OK!"
+          else
+            echo "Telegram FAILED!"
+            echo "Error: $RESPONSE"
+          fi
