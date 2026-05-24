@@ -1,0 +1,87 @@
+name: Setup Chicago Region
+on:
+  workflow_dispatch:
+
+env:
+  OCI_CLI_REGION: ${{ secrets.OCI_CLI_REGION }}
+  OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
+  OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
+  OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
+  OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/cache@v4
+        with:
+          path: ~/.local
+          key: ${{ runner.os }}-pip-oci-cli-v1
+
+      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Setup OCI CLI
+        run: |
+          pip install oci-cli
+          mkdir -p ~/.oci
+          echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/oci_api_key.pem
+          printf "[DEFAULT]\nuser=%s\ntenancy=%s\nfingerprint=%s\nkey_file=~/.oci/oci_api_key.pem\nregion=%s\n" \
+            "${{ secrets.OCI_CLI_USER }}" "${{ secrets.OCI_CLI_TENANCY }}" "${{ secrets.OCI_CLI_FINGERPRINT }}" "${{ env.OCI_CLI_REGION }}" > ~/.oci/config
+
+      - name: Subscribe to Chicago
+        run: |
+          oci iam region-subscription create --region us-chicago-1 --tenancy-id "$OCI_CLI_TENANCY" --region-key "ORD" 2>&1 || echo "Already subscribed or pending"
+
+      - name: List Chicago ADs
+        run: |
+          oci iam availability-domain list --compartment-id "$OCI_CLI_TENANCY" --region us-chicago-1 2>&1
+
+      - name: Create VCN
+        run: |
+          VCN=$(oci network vcn create --cidr-blocks '["10.0.0.0/16"]' --compartment-id "$OCI_CLI_TENANCY" --display-name "chicago-vcn" --dns-label "chicagovcn" --region us-chicago-1 2>&1)
+          echo "$VCN"
+          echo "VCN_ID=$(echo "$VCN" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["data"]["id"])')" >> $GITHUB_ENV
+
+      - name: Create Internet Gateway
+        run: |
+          IG=$(oci network internet-gateway create --compartment-id "$OCI_CLI_TENANCY" --vcn-id "$VCN_ID" --display-name "chicago-ig" --is-enabled true --region us-chicago-1 2>&1)
+          echo "$IG"
+          echo "IG_ID=$(echo "$IG" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["data"]["id"])')" >> $GITHUB_ENV
+
+      - name: Create Route Table
+        run: |
+          RT=$(oci network route-table create --compartment-id "$OCI_CLI_TENANCY" --vcn-id "$VCN_ID" --display-name "chicago-rt" --route-rules '[{"destination":"0.0.0.0/0","networkEntityId":"'"$IG_ID"'"}]' --region us-chicago-1 2>&1)
+          echo "$RT"
+          echo "RT_ID=$(echo "$RT" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["data"]["id"])')" >> $GITHUB_ENV
+
+      - name: Create Security List
+        run: |
+          SL=$(oci network security-list create --compartment-id "$OCI_CLI_TENANCY" --vcn-id "$VCN_ID" --display-name "chicago-sl" --egress-security-rules '[{"destination":"0.0.0.0/0","protocol":"all"}]' --ingress-security-rules '[{"source":"0.0.0.0/0","protocol":"6","tcp-options":{"destination-port-range":{"max":22,"min":22}}}]' --region us-chicago-1 2>&1)
+          echo "$SL"
+          echo "SL_ID=$(echo "$SL" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["data"]["id"])')" >> $GITHUB_ENV
+
+      - name: Create Subnet
+        run: |
+          AD_NAME=$(oci iam availability-domain list --compartment-id "$OCI_CLI_TENANCY" --region us-chicago-1 2>&1 | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["data"][0]["name"])')
+          echo "AD: $AD_NAME"
+          SUB=$(oci network subnet create --compartment-id "$OCI_CLI_TENANCY" --vcn-id "$VCN_ID" --cidr-block "10.0.0.0/24" --display-name "chicago-subnet" --dns-label "chicagosub" --availability-domain "$AD_NAME" --route-table-id "$RT_ID" --security-list-ids "[\"$SL_ID\"]" --region us-chicago-1 2>&1)
+          echo "$SUB"
+          echo "SUBNET_ID=$(echo "$SUB" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["data"]["id"])')" >> $GITHUB_ENV
+          echo "AD_NAME=$AD_NAME" >> $GITHUB_ENV
+
+      - name: Get ARM Image ID
+        run: |
+          IMG=$(oci compute image list --compartment-id "$OCI_CLI_TENANCY" --operating-system "Oracle Linux" --operating-system-version "8" --shape "VM.Standard.A1.Flex" --region us-chicago-1 --all 2>&1)
+          IMG_ID=$(echo "$IMG" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["data"][0]["id"])')
+          echo "IMAGE_ID=$IMG_ID"
+          echo "IMAGE_ID=$IMG_ID" >> $GITHUB_ENV
+
+      - name: Print Summary
+        run: |
+          echo "===== DONE - Update these secrets ====="
+          echo "OCI_CLI_REGION   = us-chicago-1"
+          echo "OCI_AD_NAME      = $AD_NAME"
+          echo "OCI_SUBNET_ID    = $SUBNET_ID"
+          echo "OCI_IMAGE_ID     = $IMAGE_ID"
+          echo "OCI_COMPARTMENT_ID = $OCI_CLI_TENANCY"
