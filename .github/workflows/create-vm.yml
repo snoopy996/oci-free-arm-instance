@@ -2,8 +2,6 @@ name: Try to Create OCI VM
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main ]
 
 env:
   COMPARTMENT_ID: ${{ secrets.OCI_COMPARTMENT_ID }}
