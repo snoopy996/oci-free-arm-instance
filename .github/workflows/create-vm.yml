@@ -24,14 +24,12 @@ jobs:
           - { name: "pGdO:PHX-AD-2", label: "AD-2" }
           - { name: "pGdO:PHX-AD-3", label: "AD-3" }
     steps:
-      - name: Cache pip packages
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
           path: ~/.local
           key: ${{ runner.os }}-pip-oci-cli-v1
 
-      - name: Add OCI CLI to path
-        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Setup OCI CLI
         run: |
@@ -48,6 +46,10 @@ jobs:
         run: |
           AD_NAME="${{ matrix.ad.name }}"
           AD_LABEL="${{ matrix.ad.label }}"
+          
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            --data-urlencode "text=🚀 $AD_LABEL started sniping!"
           
           for i in $(seq 1 350); do
             echo "[$AD_LABEL] === Attempt $i/350 ==="
@@ -71,7 +73,7 @@ jobs:
               exit 0
             fi
 
-            echo "[$AD_LABEL] Attempt $i failed. Retrying in 1 min..."
+            echo "[$AD_LABEL] Attempt $i failed."
 
             if [ $((i % 10)) -eq 0 ]; then
               curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
