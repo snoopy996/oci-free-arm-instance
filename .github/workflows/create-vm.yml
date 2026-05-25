@@ -51,8 +51,8 @@ jobs:
             --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
             --data-urlencode "text=🚀 $AD_LABEL started sniping!"
           
-          for i in $(seq 1 350); do
-            echo "[$AD_LABEL] === Attempt $i/350 ==="
+          for i in $(seq 1 340); do
+            echo "[$AD_LABEL] === Attempt $i/340 ==="
             OCI_OUTPUT=$(oci compute instance launch \
               --compartment-id "$COMPARTMENT_ID" \
               --availability-domain "$AD_NAME" \
@@ -78,7 +78,7 @@ jobs:
             if [ $((i % 10)) -eq 0 ]; then
               curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
                 --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-                --data-urlencode "text=🔵 $AD_LABEL alive ($i/350)"
+                --data-urlencode "text=🔵 $AD_LABEL alive ($i/340)"
             fi
 
             if [ $i -lt 350 ]; then
@@ -89,7 +89,7 @@ jobs:
           echo "[$AD_LABEL] All 350 attempts failed."
 
       - name: Auto-trigger Next Round
-        if: success() || failure()
+        if: always()
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
