@@ -1,6 +1,8 @@
 name: Try to Create OCI VM
 
 on:
+  schedule:
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 env:
@@ -81,20 +83,12 @@ jobs:
                 --data-urlencode "text=🔵 $AD_LABEL alive ($i/340)"
             fi
 
-            if [ $i -lt 350 ]; then
+            if [ $i -lt 340 ]; then
               sleep 60
             fi
           done
 
-          echo "[$AD_LABEL] All 350 attempts failed."
-
-      - name: Auto-trigger Next Round
-        if: always()
-        run: |
+          echo "[$AD_LABEL] All 340 attempts failed."
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            --data-urlencode "text=🔴 ${{ matrix.ad.label }} round ended, auto-triggering..."
-          curl -s -X POST "https://api.github.com/repos/snoopy996/oci-free-arm-instance/actions/workflows/create-vm.yml/dispatches" \
-            -H "Accept: application/vnd.github.v3+json" \
-            -H "Authorization: Bearer ${{ secrets.GH_PAT }}" \
-            -d '{"ref":"main"}'
+            --data-urlencode "text=🔴 $AD_LABEL round ended, next round in ~6h"
