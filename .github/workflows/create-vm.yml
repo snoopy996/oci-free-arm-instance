@@ -43,6 +43,14 @@ jobs:
             "${{ secrets.OCI_CLI_USER }}" "${{ secrets.OCI_CLI_TENANCY }}" "${{ secrets.OCI_CLI_FINGERPRINT }}" "${{ env.OCI_CLI_REGION }}" > ~/.oci/config
           echo "${{ secrets.SSH_PUBLIC_KEY }}" > /home/runner/my_ssh_key.pub
 
+      - name: Test Telegram
+        run: |
+          echo "Testing Telegram connectivity..."
+          RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            --data-urlencode "text=🧪 Workflow Telegram test")
+          echo "Response: $RESPONSE"
+
       - name: Snipe ${{ matrix.ad.label }}
         timeout-minutes: 360
         run: |
