@@ -42,15 +42,6 @@ jobs:
           printf "[DEFAULT]\nuser=%s\ntenancy=%s\nfingerprint=%s\nkey_file=~/.oci/oci_api_key.pem\nregion=%s\n" \
             "${{ secrets.OCI_CLI_USER }}" "${{ secrets.OCI_CLI_TENANCY }}" "${{ secrets.OCI_CLI_FINGERPRINT }}" "${{ env.OCI_CLI_REGION }}" > ~/.oci/config
           echo "${{ secrets.SSH_PUBLIC_KEY }}" > /home/runner/my_ssh_key.pub
-
-      - name: Test Telegram
-        run: |
-          echo "Testing Telegram connectivity..."
-          RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            --data-urlencode "text=🧪 Workflow Telegram test")
-          echo "Response: $RESPONSE"
-
       - name: Snipe ${{ matrix.ad.label }}
         timeout-minutes: 360
         run: |
@@ -64,19 +55,47 @@ jobs:
               --compartment-id "$COMPARTMENT_ID" \
               --availability-domain "$AD_NAME" \
               --shape "VM.Standard.A1.Flex" \
-              --shape-config '{"ocpus":4,"memoryInGBs":24}' \
+              --shape-config '{"ocpus":1,"memoryInGBs":6}' \
               --subnet-id "$SUBNET_ID" \
               --image-id "$IMAGE_ID" \
               --ssh-authorized-keys-file "/home/runner/my_ssh_key.pub" \
               --assign-public-ip true \
-              --display-name "coolify-vm" \
+              --display-name "coolify-vm-1c6g" \
               --boot-volume-size-in-gbs 200 2>&1 || true)
 
             if echo "$OCI_OUTPUT" | grep -q '"lifecycle-state": "PROVISIONING"'; then
-              echo "🎉 SUCCESS on $AD_LABEL!"
+              echo "🎉 SNIPE SUCCESS on $AD_LABEL! (1C6G)"
+              
+              # Extract instance ID
+              INSTANCE_ID=$(echo "$OCI_OUTPUT" | grep -o '"id": "[^"]*"' | head -1 | cut -d'"' -f4)
+              
               curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
                 --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-                --data-urlencode "text=🎉 SUCCESS! OCI VM created on $AD_LABEL! 4C24G ARM is ready!"
+                --data-urlencode "text=🎉 抢到了！$AD_LABEL 1C6G ARM | 开始自动升级到 4C24G..."
+              
+              echo "=== Starting upgrade to 4C24G ==="
+              for u in $(seq 1 120); do
+                echo "[Upgrade] Attempt $u/120"
+                UPGRADE_OUT=$(oci compute instance update --instance-id "$INSTANCE_ID" \
+                  --shape-config '{"ocpus":4,"memoryInGBs":24}' --force 2>&1 || true)
+                
+                if echo "$UPGRADE_OUT" | grep -q '"lifecycle-state": "RUNNING"'; then
+                  echo "✅ Upgrade to 4C24G successful!"
+                  curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+                    --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+                    --data-urlencode "text=✅ 升级完成！$AD_LABEL 4C24G ARM 已就绪，SSH 连接：ssh -o GSSAPIAuthentication=no ubuntu@<公网IP>"
+                  exit 0
+                fi
+                
+                echo "[Upgrade] Attempt $u failed (no capacity for 4C24G yet)"
+                if [ $u -lt 120 ]; then
+                  sleep 60
+                fi
+              done
+              
+              curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+                --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+                --data-urlencode "text=⚠️ 升级超时：抢到 1C6G 但 120次尝试未能扩到 4C24G，需手动在控制台升级"
               exit 0
             fi
 
