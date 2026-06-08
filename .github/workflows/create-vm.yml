@@ -64,21 +64,8 @@ jobs:
               --boot-volume-size-in-gbs 200 2>&1 || true)
 
             if echo "$OCI_OUTPUT" | grep -q '"lifecycle-state": "PROVISIONING"'; then
-              echo "🎉 SNIPE SUCCESS on $AD_LABEL! (1C6G)"
-              
-              # Stop other AD jobs immediately
-              echo "Stopping other AD jobs..."
-              RUN_ID=${{ github.run_id }}
-              JOB_NAME="${{ github.job }}"
-              curl -s -H "Authorization: Bearer ${{ secrets.GH_PAT }}" \
-                "https://api.github.com/repos/${{ github.repository }}/actions/runs/$RUN_ID/jobs" | \
-                jq -r '.jobs[] | select(.status=="in_progress" or .status=="queued") | select(.name!="'"$JOB_NAME"'") | .id' | \
-                while read jid; do
-                  echo "  Cancelling job $jid..."
-                  curl -s -X POST -H "Authorization: Bearer ${{ secrets.GH_PAT }}" \
-                    "https://api.github.com/repos/${{ github.repository }}/actions/jobs/$jid/cancel"
-                done
-              echo "Other jobs stopped, proceeding with upgrade..."
+              echo "🎉 SNIPE SUCCESS on $AD_LABEL (1C6G config)"
+
               
               # Extract instance ID
               INSTANCE_ID=$(echo "$OCI_OUTPUT" | grep -o '"id": "[^"]*"' | head -1 | cut -d'"' -f4)
