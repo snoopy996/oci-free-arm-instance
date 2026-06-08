@@ -102,7 +102,7 @@ jobs:
 
             echo "[$AD_LABEL] Attempt $i failed."
 
-            if [ $((i % 90)) -eq 0 ]; then
+            if [ $((i % 15)) -eq 0 ]; then
               curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
                 --data-urlencode "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
                 --data-urlencode "text=🔵 $AD_LABEL 仍在抢购中 ($i/340)，暂无资源"
